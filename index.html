@@ -1,0 +1,973 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Simulador Educativo de Urna Eletrônica</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Firebase App e Realtime Database SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
+  <style>
+    :root {
+      --bg-body: #0f172a;
+      --panel-bg: #1e293b;
+      --panel-border: #334155;
+      --screen-bg: #f8fafc;
+      --screen-text: #0f172a;
+      --screen-border: #94a3b8;
+      
+      --btn-corrige: #dc2626;
+      --btn-confirma: #16a34a;
+      --btn-primary: #2563eb;
+      
+      --shadow-soft: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+      --shadow-cabinet: 0 20px 40px -15px rgba(0, 0, 0, 0.5);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
+    body { background-color: var(--bg-body); color: #f8fafc; min-height: 100vh; display: flex; flex-direction: column; }
+
+    /* TELA DE BLOQUEIO GLOBAL DA URNA */
+    .global-lock-screen {
+      position: fixed; inset: 0; background: linear-gradient(135deg, #020617, #0f172a);
+      z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      padding: 1.5rem; text-align: center;
+    }
+    .lock-card {
+      background: #1e293b; border: 1px solid #334155; border-radius: 20px;
+      padding: 2rem; width: min(420px, 100%); box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);
+    }
+
+    header { background: #1e293b; border-bottom: 1px solid #334155; padding: 0.85rem 1.5rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; }
+    .brand-title { font-size: 1.2rem; font-weight: 800; display: flex; align-items: center; gap: 0.5rem; color: #38bdf8; }
+    .header-nav { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    .nav-btn { padding: 0.5rem 1rem; border-radius: 8px; border: 1px solid #475569; background: #0f172a; color: #94a3b8; font-size: 0.88rem; font-weight: 700; cursor: pointer; transition: 0.15s; }
+    .nav-btn:hover { background: #334155; color: #fff; }
+    .nav-btn.active { background: #2563eb; border-color: #3b82f6; color: #fff; }
+
+    .timer-badge { background: #f59e0b1f; border: 1px solid #f59e0b44; color: #f59e0b; padding: 0.4rem 0.8rem; border-radius: 8px; font-size: 0.85rem; font-weight: 800; display: flex; align-items: center; gap: 0.4rem; }
+
+    .main-wrapper { flex: 1; padding: 1.5rem; max-width: 1200px; margin: 0 auto; width: 100%; }
+
+    .view-section { display: none; }
+    .view-section.active { display: block; }
+
+    .voting-layout { display: grid; grid-template-columns: 1fr 1.2fr; gap: 1.5rem; }
+    @media (max-width: 900px) { .voting-layout { grid-template-columns: 1fr; } }
+
+    .guide-card { background: #1e293b; border: 1px solid #334155; border-radius: 16px; padding: 1.25rem; }
+    .guide-title { font-size: 1rem; font-weight: 800; color: #cbd5e1; margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center; }
+    .candidates-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; max-height: 520px; overflow-y: auto; padding-right: 0.3rem; }
+    
+    .cand-card { background: #0f172a; border: 1px solid #334155; border-radius: 12px; padding: 0.85rem; display: flex; flex-direction: column; gap: 0.6rem; position: relative; }
+    .cand-header { display: flex; gap: 0.75rem; align-items: center; }
+    .cand-imgs { display: flex; gap: 0.3rem; }
+    .cand-avatar { width: 42px; height: 42px; border-radius: 8px; object-fit: cover; border: 2px solid #334155; background: #1e293b; display: grid; place-items: center; font-size: 1.2rem; }
+    .cand-info { flex: 1; min-width: 0; }
+    .cand-num { font-size: 0.75rem; font-weight: 900; background: #2563eb; color: #fff; padding: 0.1rem 0.4rem; border-radius: 4px; display: inline-block; }
+    .cand-name { font-size: 0.95rem; font-weight: 800; color: #f8fafc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .cand-vice { font-size: 0.78rem; color: #94a3b8; }
+    .cand-actions { display: flex; gap: 0.4rem; margin-top: auto; }
+    .btn-action-sm { flex: 1; padding: 0.4rem; border-radius: 6px; border: none; font-size: 0.78rem; font-weight: 800; cursor: pointer; transition: 0.10s; text-align: center; }
+    .btn-select { background: #16a34a; color: #fff; }
+    .btn-select:hover { background: #15803d; }
+    .btn-profile { background: #334155; color: #cbd5e1; }
+    .btn-profile:hover { background: #475569; color: #fff; }
+
+    .urna-cabinet { background: #1e293b; border: 3px solid #334155; border-radius: 20px; padding: 1.5rem; display: grid; grid-template-columns: 1.2fr 1fr; gap: 1.25rem; box-shadow: var(--shadow-cabinet); position: relative; }
+    @media (max-width: 600px) { .urna-cabinet { grid-template-columns: 1fr; } }
+
+    .urna-screen { background: #f8fafc; border: 4px solid #94a3b8; border-radius: 12px; height: 380px; padding: 1.25rem; display: flex; flex-direction: column; justify-content: space-between; color: #0f172a; position: relative; }
+    .screen-header { border-bottom: 2px dashed #cbd5e1; padding-bottom: 0.4rem; font-size: 0.8rem; font-weight: 800; color: #64748b; }
+    .screen-body { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 0.75rem; }
+    .screen-footer { border-top: 2px dashed #cbd5e1; padding-top: 0.4rem; font-size: 0.7rem; color: #475569; }
+
+    .number-row { display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.5rem; }
+    .num-box { width: 40px; height: 48px; border: 2px solid #0f172a; background: #fff; display: grid; place-items: center; font-size: 1.8rem; font-weight: 900; color: #0f172a; }
+    
+    .candidate-preview-screen { display: flex; gap: 0.85rem; background: #fff; border-radius: 8px; padding: 0.75rem; border-left: 5px solid #2563eb; box-shadow: 0 2px 6px rgba(0,0,0,0.05); }
+    .preview-photos { display: flex; flex-direction: column; gap: 0.4rem; }
+    .preview-img-box { text-align: center; }
+    .preview-img-box img, .preview-img-box .no-img { width: 54px; height: 54px; border-radius: 6px; object-fit: cover; border: 1px solid #cbd5e1; background: #f1f5f9; display: grid; place-items: center; font-size: 1.2rem; }
+    .preview-img-box span { font-size: 0.6rem; font-weight: 800; color: #64748b; display: block; }
+
+    .keypad-panel { background: #0f172a; border-radius: 12px; padding: 1rem; display: flex; flex-direction: column; justify-content: space-between; gap: 1rem; }
+    .num-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; justify-items: center; }
+    .btn-key { width: 50px; height: 45px; background: #1e293b; color: #fff; border: 1px solid #334155; border-radius: 6px; font-size: 1.25rem; font-weight: 800; cursor: pointer; box-shadow: 0 3px 0 #020617; }
+    .btn-key:active { transform: translateY(2px); box-shadow: 0 1px 0 #020617; }
+    .action-grid { display: grid; grid-template-columns: 1fr 1fr 1.2fr; gap: 0.4rem; }
+    .btn-act { padding: 0.6rem 0.2rem; border-radius: 6px; border: none; font-size: 0.75rem; font-weight: 900; cursor: pointer; text-align: center; box-shadow: 0 3px 0 rgba(0,0,0,0.4); }
+    .btn-act:active { transform: translateY(2px); box-shadow: none; }
+    .btn-act.branco { background: #fff; color: #0f172a; }
+    .btn-act.corrige { background: #dc2626; color: #fff; }
+    .btn-act.confirma { background: #16a34a; color: #fff; }
+
+    .admin-card { background: #1e293b; border: 1px solid #334155; border-radius: 16px; padding: 1.5rem; margin-bottom: 1.5rem; }
+    .admin-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+    @media (max-width: 800px) { .admin-grid { grid-template-columns: 1fr; } }
+
+    .form-group { margin-bottom: 1rem; }
+    .form-group label { display: block; font-size: 0.82rem; font-weight: 800; color: #cbd5e1; margin-bottom: 0.35rem; }
+    .form-control { width: 100%; padding: 0.65rem 0.85rem; border-radius: 8px; border: 1px solid #475569; background: #0f172a; color: #fff; font-size: 0.9rem; }
+    .form-control-file { width: 100%; font-size: 0.8rem; color: #cbd5e1; }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+
+    .btn-primary { background: #2563eb; color: #fff; border: none; padding: 0.65rem 1.25rem; border-radius: 8px; font-weight: 800; cursor: pointer; transition: 0.15s; }
+    .btn-primary:hover { background: #1d4ed8; }
+    .btn-danger { background: #dc2626; color: #fff; border: none; padding: 0.65rem 1.25rem; border-radius: 8px; font-weight: 800; cursor: pointer; transition: 0.15s; }
+    .btn-danger:hover { background: #b91c1c; }
+    .btn-warning { background: #d97706; color: #fff; border: none; padding: 0.65rem 1.25rem; border-radius: 8px; font-weight: 800; cursor: pointer; transition: 0.15s; }
+    .btn-warning:hover { background: #b45309; }
+
+    .table-custom { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+    .table-custom th, .table-custom td { padding: 0.75rem; text-align: left; border-bottom: 1px solid #334155; font-size: 0.88rem; }
+    .table-custom th { background: #0f172a; color: #94a3b8; }
+
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); backdrop-filter: blur(4px); display: none; place-items: center; z-index: 1000; padding: 1rem; }
+    .modal-card { background: #1e293b; border: 1px solid #334155; border-radius: 16px; width: min(500px, 100%); padding: 1.5rem; position: relative; }
+    .modal-close { position: absolute; top: 1rem; right: 1rem; background: none; border: none; color: #94a3b8; font-size: 1.2rem; cursor: pointer; }
+  </style>
+</head>
+<body>
+
+  <!-- TELA DE BLOQUEIO GLOBAL DA URNA -->
+  <div class="global-lock-screen" id="global-lock-screen">
+    <div class="lock-card">
+      <div style="font-size: 3rem; margin-bottom: 1rem;">🗳️🔒</div>
+      <h2 style="font-size: 1.4rem; color: #f8fafc; margin-bottom: 0.5rem;">Urna Eletrônica Protegida</h2>
+      <p style="color: #94a3b8; font-size: 0.88rem; margin-bottom: 1.5rem;">
+        Digite a <b>Senha da Urna</b> para liberar este terminal (Padrão inicial: <b>urna123</b>).
+      </p>
+      <form onsubmit="handleUrnaAccessUnlock(event)">
+        <div class="form-group" style="text-align: left;">
+          <label>Senha da Urna</label>
+          <input type="password" id="urna-access-pwd" class="form-control" placeholder="••••••••" required>
+        </div>
+        <button type="submit" class="btn-primary" style="width: 100%;">Entrar na Urna</button>
+      </form>
+    </div>
+  </div>
+
+  <header>
+    <div class="brand-title">
+      🗳️ Simulador de Urna Eletrônica
+    </div>
+    <div class="timer-badge">
+      ⏱️ Tempo da Eleição: <span id="election-timer-display">60:00</span>
+    </div>
+    <div class="header-nav">
+      <button class="nav-btn active" id="btn-nav-voter" onclick="switchTab('voter')">Terminal do Eleitor</button>
+      <button class="nav-btn" id="btn-nav-public-results" onclick="switchTab('public-results')">📊 Apuração Pública</button>
+      <button class="nav-btn" id="btn-nav-admin" onclick="openAdminAuth()">Área do Gestor (Admin)</button>
+    </div>
+  </header>
+
+  <div class="main-wrapper">
+
+    <!-- ÁREA DO ELEITOR -->
+    <section id="view-voter" class="view-section active">
+      <div class="voting-layout">
+        
+        <div class="guide-card">
+          <div class="guide-title">
+            <span>📖 Caderno Guia de Candidatos</span>
+            <span style="font-size: 0.75rem; color: #94a3b8; font-weight: normal;">Clique para selecionar</span>
+          </div>
+          <div class="candidates-list" id="guide-candidates-list"></div>
+        </div>
+
+        <div class="urna-cabinet">
+          <div class="urna-screen">
+            <div class="screen-header">
+              SEU VOTO PARA: <b id="screen-title">CANDIDATO / CHAPA</b>
+            </div>
+
+            <div class="screen-body" id="screen-body"></div>
+
+            <div class="screen-footer" id="screen-footer">
+              Aperte a tecla:<br>
+              <b>CONFIRMA</b> para CONFIRMAR este voto<br>
+              <b>CORRIGE</b> para REINICIAR este voto
+            </div>
+          </div>
+
+          <div class="keypad-panel">
+            <div style="text-align: center; color: #64748b; font-size: 0.65rem; font-weight: 800; letter-spacing: 0.1em;">JUSTIÇA ELEITORAL</div>
+            <div class="num-grid">
+              <button class="btn-key" onclick="pressNum('1')">1</button>
+              <button class="btn-key" onclick="pressNum('2')">2</button>
+              <button class="btn-key" onclick="pressNum('3')">3</button>
+              <button class="btn-key" onclick="pressNum('4')">4</button>
+              <button class="btn-key" onclick="pressNum('5')">5</button>
+              <button class="btn-key" onclick="pressNum('6')">6</button>
+              <button class="btn-key" onclick="pressNum('7')">7</button>
+              <button class="btn-key" onclick="pressNum('8')">8</button>
+              <button class="btn-key" onclick="pressNum('9')">9</button>
+              <div style="visibility: hidden;"></div>
+              <button class="btn-key" onclick="pressNum('0')">0</button>
+              <div style="visibility: hidden;"></div>
+            </div>
+            <div class="action-grid">
+              <button class="btn-act branco" onclick="pressBranco()">BRANCO</button>
+              <button class="btn-act corrige" onclick="pressCorrige()">CORRIGE</button>
+              <button class="btn-act confirma" onclick="pressConfirma()">CONFIRMA</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ABA DE APURAÇÃO PÚBLICA -->
+    <section id="view-public-results" class="view-section">
+      <div class="admin-card">
+        <h3 style="margin-bottom: 1rem; color: #38bdf8;">📊 Quadro Geral de Apuração em Tempo Real</h3>
+        <p style="color: #94a3b8; margin-bottom: 1.5rem; font-size: 0.9rem;">
+          Esta tela é visível publicamente para que candidatos, chapas e alunos acompanhem a contagem de votos.
+        </p>
+        <div style="max-width: 700px; margin: 0 auto 2rem auto;">
+          <canvas id="publicResultsChart" style="max-height: 300px;"></canvas>
+        </div>
+        <h4 style="font-size: 1rem; color: #cbd5e1; margin-bottom: 0.5rem;">Detalhamento por Candidato</h4>
+        <table class="table-custom">
+          <thead>
+            <tr>
+              <th>Candidato / Chapa</th>
+              <th>Número</th>
+              <th>Partido</th>
+              <th>Votos Registrados</th>
+            </tr>
+          </thead>
+          <tbody id="public-tally-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ÁREA DO GESTOR (ADMIN) -->
+    <section id="view-admin" class="view-section">
+
+      <!-- APURAÇÃO PRIVADA DO ADMIN -->
+      <div class="admin-card">
+        <h3 style="margin-bottom: 1rem; color: #38bdf8;">📈 Apuração em Tempo Real (Painel do Gestor)</h3>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
+          <div>
+            <canvas id="adminResultsChart" style="max-height: 250px;"></canvas>
+          </div>
+          <div>
+            <h4 style="font-size: 0.9rem; color: #cbd5e1; margin-bottom: 0.5rem;">Resumo da Votação</h4>
+            <table class="table-custom">
+              <thead>
+                <tr>
+                  <th>Chapa / Candidato</th>
+                  <th>Votos</th>
+                </tr>
+              </thead>
+              <tbody id="admin-tally-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      
+      <div class="admin-grid">
+        
+        <div class="admin-card">
+          <h3 style="margin-bottom: 1rem; color: #38bdf8;">📝 Inscrição de Chapa / Candidato</h3>
+          <form onsubmit="handleSaveCandidate(event)">
+            <input type="hidden" id="cand-edit-id">
+            <div class="form-row">
+              <div class="form-group">
+                <label>Número (1 a 99)*</label>
+                <input type="number" id="cand-num" class="form-control" min="1" max="99" required placeholder="Ex: 10">
+              </div>
+              <div class="form-group">
+                <label>Partido / Sigla*</label>
+                <input type="text" id="cand-party" class="form-control" required placeholder="Ex: PTEC">
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label>Nome do Candidato*</label>
+                <input type="text" id="cand-name" class="form-control" required placeholder="Ex: Ana Souza">
+              </div>
+              <div class="form-group">
+                <label>Foto do Candidato (Computador)*</label>
+                <input type="file" id="cand-photo-file" class="form-control-file" accept="image/*" onchange="handleImageUpload(event, 'cand-photo-base64')">
+                <input type="hidden" id="cand-photo-base64">
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label>Nome do Vice*</label>
+                <input type="text" id="cand-vice" class="form-control" required placeholder="Ex: Bruno Lima">
+              </div>
+              <div class="form-group">
+                <label>Foto do Vice (Computador)*</label>
+                <input type="file" id="cand-vice-photo-file" class="form-control-file" accept="image/*" onchange="handleImageUpload(event, 'cand-vice-photo-base64')">
+                <input type="hidden" id="cand-vice-photo-base64">
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>Slogan ou Proposta Principal*</label>
+              <textarea id="cand-desc" class="form-control" rows="2" required placeholder="Resumo das propostas..."></textarea>
+            </div>
+
+            <button type="submit" class="btn-primary" style="width: 100%;">Salvar Candidato</button>
+          </form>
+        </div>
+
+        <div class="admin-card">
+          <h3 style="margin-bottom: 1rem; color: #38bdf8;">⚙️ Controle da Eleição & Segurança</h3>
+
+          <div style="margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid #334155;">
+            <h4 style="font-size: 0.9rem; margin-bottom: 0.5rem; color: #38bdf8;">🆕 Criar Nova Eleição / Urna do Zero</h4>
+            <p style="font-size: 0.8rem; color: #94a3b8; margin-bottom: 0.75rem;">Reinicia o processo. Você pode manter os candidatos inscritos ou apagar tudo.</p>
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+              <button class="btn-warning" onclick="createNewElection(false)">Resetar Apenas Votos</button>
+              <button class="btn-danger" onclick="createNewElection(true)">Zerar Tudo (Nova Urna)</button>
+            </div>
+          </div>
+          
+          <div style="margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid #334155;">
+            <h4 style="font-size: 0.9rem; margin-bottom: 0.5rem; color: #ef4444;">🏁 Encerramento Definitivo</h4>
+            <p style="font-size: 0.8rem; color: #94a3b8; margin-bottom: 0.75rem;">Ao encerrar, a urna é travada e ninguém mais poderá votar.</p>
+            <button class="btn-danger" onclick="finalizeElection()">🏁 Encerrar Votação Definitivamente</button>
+          </div>
+
+          <div style="margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid #334155;">
+            <h4 style="font-size: 0.9rem; margin-bottom: 0.5rem; color: #cbd5e1;">⏱️ Duração da Eleição</h4>
+            <div style="display: flex; gap: 0.5rem;">
+              <input type="number" id="input-timer-min" class="form-control" value="60" min="1" style="width: 100px;">
+              <button class="btn-primary" onclick="updateElectionTimer()">Atualizar Tempo</button>
+            </div>
+          </div>
+
+          <div style="margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid #334155;">
+            <h4 style="font-size: 0.9rem; margin-bottom: 0.5rem; color: #cbd5e1;">🔑 Alterar Senha de Acesso à URNA</h4>
+            <p style="font-size: 0.75rem; color: #94a3b8; margin-bottom: 0.5rem;">Esta senha é exigida na tela inicial do site (não pode ser igual à do Admin).</p>
+            <form onsubmit="handleChangeUrnaPassword(event)">
+              <div class="form-group">
+                <label>Nova Senha da Urna*</label>
+                <input type="password" id="urna-pwd-new" class="form-control" required minlength="4" placeholder="••••••••">
+              </div>
+              <button type="submit" class="btn-primary">Atualizar Senha da Urna</button>
+            </form>
+          </div>
+
+          <div>
+            <h4 style="font-size: 0.9rem; margin-bottom: 0.5rem; color: #cbd5e1;">🔐 Alterar Senha de Administrador</h4>
+            <p style="font-size: 0.75rem; color: #94a3b8; margin-bottom: 0.5rem;">Esta senha é usada para aceder a esta Área do Gestor.</p>
+            <form onsubmit="handleChangeAdminPassword(event)">
+              <div class="form-group">
+                <label>Senha Atual do Admin*</label>
+                <input type="password" id="pwd-current" class="form-control" required placeholder="••••••••">
+              </div>
+              <div class="form-group">
+                <label>Nova Senha do Admin*</label>
+                <input type="password" id="pwd-new" class="form-control" required minlength="4" placeholder="••••••••">
+              </div>
+              <div class="form-group">
+                <label>Confirmar Nova Senha*</label>
+                <input type="password" id="pwd-confirm" class="form-control" required minlength="4" placeholder="••••••••">
+              </div>
+              <button type="submit" class="btn-primary">Alterar Senha Admin</button>
+            </form>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="admin-card">
+        <h3 style="margin-bottom: 1rem; color: #38bdf8;">📊 Registro de Eleitores</h3>
+        <div style="max-height: 250px; overflow-y: auto;">
+          <table class="table-custom">
+            <thead>
+              <tr><th>Nome do Eleitor</th><th>Tempo gasto na Votação</th></tr>
+            </thead>
+            <tbody id="voter-log-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <!-- MODAL DE LOGIN ADMIN -->
+  <div class="modal-overlay" id="modal-auth">
+    <div class="modal-card">
+      <button class="modal-close" onclick="closeAuthModal()">✕</button>
+      <h3 style="margin-bottom: 1rem; color: #f8fafc;">🔐 Acesso Restrito ao Gestor</h3>
+      <form onsubmit="handleAdminLogin(event)">
+        <div class="form-group">
+          <label>Senha de Administrador</label>
+          <input type="password" id="admin-login-pwd" class="form-control" required placeholder="Digite a senha (padrão: admin123)">
+        </div>
+        <button type="submit" class="btn-primary" style="width: 100%;">Entrar no Painel</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL PERFIL CANDIDATO -->
+  <div class="modal-overlay" id="modal-profile">
+    <div class="modal-card">
+      <button class="modal-close" onclick="closeProfileModal()">✕</button>
+      <div id="profile-modal-content"></div>
+    </div>
+  </div>
+
+  <script>
+    // Configuração do seu projeto no Firebase (Substitua pelos seus dados do Firebase Console)
+    const firebaseConfig = {
+      apiKey: "SUA_API_KEY",
+      authDomain: "SEU_PROJETO.firebaseapp.com",
+      databaseURL: "https://SEU_PROJETO-default-rtdb.firebaseio.com",
+      projectId: "SEU_PROJETO",
+      storageBucket: "SEU_PROJETO.appspot.com",
+      messagingSenderId: "123456789",
+      appId: "1:123456789:web:abcdef"
+    };
+
+    // Inicialização do Firebase
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    const INITIAL_CANDIDATES = [
+      { numero: '10', nome: 'Ana Souza', vice: 'Bruno Lima', partido: 'PTEC', descricao: 'Inovação e laboratórios 24h para todos.', photo: '', vicePhoto: '' },
+      { numero: '20', nome: 'Carlos Eduardo', vice: 'Daniela Rocha', partido: 'PORG', descricao: 'Sustentabilidade, organização e esportes.', photo: '', vicePhoto: '' }
+    ];
+
+    let state = {
+      candidates: INITIAL_CANDIDATES,
+      votes: {},
+      voterLogs: [],
+      adminPasswordHash: null,
+      urnaPasswordHash: null,
+      electionEnded: false,
+      typedNumber: '',
+      votedInRound: false,
+      voterStartTime: Date.now(),
+      electionSecondsLeft: 3600
+    };
+
+    let audioCtx = null;
+    let chartInstancePublic = null;
+    let chartInstanceAdmin = null;
+
+    async function hashString(str) {
+      const data = new TextEncoder().encode(str);
+      const digest = await crypto.subtle.digest('SHA-256', data);
+      return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    async function initDefaultPasswords() {
+      if (!state.adminPasswordHash) {
+        state.adminPasswordHash = await hashString('admin123');
+        db.ref('settings/adminPasswordHash').set(state.adminPasswordHash);
+      }
+      if (!state.urnaPasswordHash) {
+        state.urnaPasswordHash = await hashString('urna123');
+        db.ref('settings/urnaPasswordHash').set(state.urnaPasswordHash);
+      }
+    }
+
+    // Ouvinte em tempo real para sincronização com o Firebase
+    db.ref().on('value', (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        state.candidates = data.candidates || INITIAL_CANDIDATES;
+        state.votes = data.votes || {};
+        state.voterLogs = data.voterLogs ? Object.values(data.voterLogs) : [];
+        state.electionEnded = data.settings?.electionEnded || false;
+        state.electionSecondsLeft = data.settings?.electionSecondsLeft || 3600;
+        state.adminPasswordHash = data.settings?.adminPasswordHash || null;
+        state.urnaPasswordHash = data.settings?.urnaPasswordHash || null;
+      } else {
+        // Inicializa o banco de dados na primeira vez
+        db.ref('candidates').set(INITIAL_CANDIDATES);
+        db.ref('settings/electionSecondsLeft').set(3600);
+        db.ref('settings/electionEnded').set(false);
+      }
+
+      initDefaultPasswords();
+      renderGuide();
+      renderScreen();
+      renderVoterLogs();
+      
+      if (document.getElementById('view-public-results').classList.contains('active')) {
+        renderPublicResults();
+      }
+      if (document.getElementById('view-admin').classList.contains('active')) {
+        renderAdminResults();
+      }
+    });
+
+    async function handleUrnaAccessUnlock(e) {
+      e.preventDefault();
+      const pwd = document.getElementById('urna-access-pwd').value;
+      const hash = await hashString(pwd);
+      if (hash === state.urnaPasswordHash) {
+        document.getElementById('global-lock-screen').style.display = 'none';
+      } else {
+        alert('Senha da Urna incorreta! Acesso negado.');
+      }
+    }
+
+    function playBeep() {
+      try {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.05, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.08);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.08);
+      } catch (e) {}
+    }
+
+    function playSuccessChime() {
+      try {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const now = audioCtx.currentTime;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.frequency.setValueAtTime(440, now);
+        osc.frequency.setValueAtTime(880, now + 0.12);
+        gain.gain.setValueAtTime(0.1, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start(now);
+        osc.stop(now + 0.5);
+      } catch (e) {}
+    }
+
+    function switchTab(tab) {
+      document.getElementById('view-voter').classList.toggle('active', tab === 'voter');
+      document.getElementById('view-public-results').classList.toggle('active', tab === 'public-results');
+      document.getElementById('view-admin').classList.toggle('active', tab === 'admin');
+
+      document.getElementById('btn-nav-voter').classList.toggle('active', tab === 'voter');
+      document.getElementById('btn-nav-public-results').classList.toggle('active', tab === 'public-results');
+      document.getElementById('btn-nav-admin').classList.toggle('active', tab === 'admin');
+
+      if (tab === 'public-results') {
+        renderPublicResults();
+      } else if (tab === 'admin') {
+        renderAdminResults();
+      }
+    }
+
+    function openAdminAuth() {
+      document.getElementById('modal-auth').style.display = 'grid';
+    }
+    function closeAuthModal() {
+      document.getElementById('modal-auth').style.display = 'none';
+    }
+
+    async function handleAdminLogin(e) {
+      e.preventDefault();
+      const pwd = document.getElementById('admin-login-pwd').value;
+      const hash = await hashString(pwd);
+      if (hash === state.adminPasswordHash) {
+        closeAuthModal();
+        switchTab('admin');
+      } else {
+        alert('Senha incorreta!');
+      }
+    }
+
+    function handleImageUpload(event, targetHiddenInputId) {
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        document.getElementById(targetHiddenInputId).value = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function renderGuide() {
+      const container = document.getElementById('guide-candidates-list');
+      container.innerHTML = state.candidates.map(c => `
+        <div class="cand-card">
+          <div class="cand-header">
+            <div class="cand-imgs">
+              ${c.photo ? `<img src="${c.photo}" class="cand-avatar">` : `<div class="cand-avatar">👤</div>`}
+              ${c.vicePhoto ? `<img src="${c.vicePhoto}" class="cand-avatar">` : `<div class="cand-avatar">👤</div>`}
+            </div>
+            <div class="cand-info">
+              <span class="cand-num">Nº ${c.numero}</span>
+              <div class="cand-name">${c.nome}</div>
+              <div class="cand-vice">Vice: ${c.vice}</div>
+            </div>
+          </div>
+          <div class="cand-actions">
+            <button class="btn-action-sm btn-select" onclick="selectCandidateNumber('${c.numero}')">Votar Nº ${c.numero}</button>
+            <button class="btn-action-sm btn-profile" onclick="openProfile('${c.numero}')">Perfil</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function selectCandidateNumber(num) {
+      if (state.votedInRound || state.electionEnded) return;
+      playBeep();
+      state.typedNumber = num;
+      renderScreen();
+    }
+
+    function pressNum(digit) {
+      if (state.votedInRound || state.electionEnded) return;
+      playBeep();
+      if (state.typedNumber === 'BRANCO') state.typedNumber = digit;
+      else if (state.typedNumber.length < 2) state.typedNumber += digit;
+      renderScreen();
+    }
+
+    function pressBranco() {
+      if (state.votedInRound || state.electionEnded) return;
+      playBeep();
+      state.typedNumber = 'BRANCO';
+      renderScreen();
+    }
+
+    function pressCorrige() {
+      if (state.votedInRound || state.electionEnded) return;
+      playBeep();
+      state.typedNumber = '';
+      renderScreen();
+    }
+
+    function pressConfirma() {
+      if (state.votedInRound || state.electionEnded) return;
+      if (!state.typedNumber) return alert('Digite um número ou pressione BRANCO.');
+
+      const voterName = prompt('Digite seu nome para registrar o voto:') || 'Eleitor Anônimo';
+      const durationSec = Math.round((Date.now() - state.voterStartTime) / 1000);
+
+      const voteKey = state.typedNumber;
+      
+      // Incrementa os votos e grava o log no Firebase Realtime Database
+      db.ref(`votes/${voteKey}`).transaction((currentVotes) => (currentVotes || 0) + 1);
+      db.ref('voterLogs').push({ name: voterName, durationSec });
+
+      state.votedInRound = true;
+      playSuccessChime();
+      renderScreen();
+
+      setTimeout(() => {
+        state.votedInRound = false;
+        state.typedNumber = '';
+        state.voterStartTime = Date.now();
+        renderScreen();
+      }, 3000);
+    }
+
+    function finalizeElection() {
+      if (!confirm('Tem certeza de que deseja encerrar a votação definitivamente?')) return;
+      db.ref('settings/electionEnded').set(true);
+      alert('Votação encerrada com sucesso!');
+      switchTab('public-results');
+    }
+
+    function createNewElection(clearAllData) {
+      const msg = clearAllData 
+        ? 'Deseja ZERAR TUDO (remover todos os candidatos e votos)? Uma nova urna limpa será criada.' 
+        : 'Deseja ZERAR APENAS OS VOTOS? Os candidatos serão mantidos para a nova eleição.';
+      if (!confirm(msg)) return;
+
+      db.ref('votes').remove();
+      db.ref('voterLogs').remove();
+      db.ref('settings/electionEnded').set(false);
+      db.ref('settings/electionSecondsLeft').set(3600);
+
+      if (clearAllData) {
+        db.ref('candidates').set([]);
+      }
+
+      alert('Nova eleição iniciada!');
+    }
+
+    function renderScreen() {
+      const body = document.getElementById('screen-body');
+      const footer = document.getElementById('screen-footer');
+
+      if (state.electionEnded) {
+        body.innerHTML = `
+          <div style="text-align: center; color: #dc2626;">
+            <h2 style="font-size: 1.8rem; font-weight: 900;">VOTAÇÃO ENCERRADA</h2>
+            <p style="font-size: 0.85rem; color: #475569; margin-top: 0.5rem;">A eleição foi finalizada pelo administrador.</p>
+          </div>
+        `;
+        footer.style.display = 'none';
+        return;
+      }
+
+      if (state.votedInRound) {
+        body.innerHTML = `
+          <div style="text-align: center; color: #16a34a;">
+            <h1 style="font-size: 3.5rem; font-weight: 900;">FIM</h1>
+            <p style="font-size: 0.9rem; font-weight: 700;">VOTO GRAVADO COM SUCESSO</p>
+          </div>
+        `;
+        footer.style.display = 'none';
+        return;
+      }
+
+      footer.style.display = 'block';
+
+      if (!state.typedNumber) {
+        body.innerHTML = `
+          <div style="text-align: center; color: #64748b;">
+            <div class="number-row" style="justify-content: center;">
+              <div class="num-box">_</div>
+              <div class="num-box">_</div>
+            </div>
+            <p style="font-weight: 700; font-size: 0.9rem;">Digite o número do candidato</p>
+          </div>
+        `;
+        return;
+      }
+
+      if (state.typedNumber === 'BRANCO') {
+        body.innerHTML = `
+          <div style="text-align: center; color: #0f172a;">
+            <h2 style="font-size: 1.8rem; font-weight: 900;">VOTO EM BRANCO</h2>
+          </div>
+        `;
+        return;
+      }
+
+      const numStr = state.typedNumber.padStart(2, '0');
+      const boxes = numStr.split('').map(n => `<div class="num-box">${n}</div>`).join('');
+      const cand = state.candidates.find(c => c.numero === state.typedNumber);
+
+      if (cand) {
+        body.innerHTML = `
+          <div>
+            <div class="number-row">${boxes}</div>
+            <div class="candidate-preview-screen">
+              <div class="preview-photos">
+                <div class="preview-img-box">
+                  ${cand.photo ? `<img src="${cand.photo}">` : `<div class="no-img">👤</div>`}
+                  <span>CANDIDATO</span>
+                </div>
+                <div class="preview-img-box">
+                  ${cand.vicePhoto ? `<img src="${cand.vicePhoto}">` : `<div class="no-img">👤</div>`}
+                  <span>VICE</span>
+                </div>
+              </div>
+              <div style="flex:1;">
+                <div style="font-size: 1.1rem; font-weight: 900;">${cand.nome}</div>
+                <div style="font-size: 0.85rem; color: #475569; font-weight: 700;">Vice: ${cand.vice}</div>
+                <div style="font-size: 0.8rem; color: #2563eb; font-weight: 800; margin-top: 0.2rem;">${cand.partido}</div>
+              </div>
+            </div>
+          </div>
+        `;
+      } else {
+        body.innerHTML = `
+          <div>
+            <div class="number-row">${boxes}</div>
+            <div style="background: #fef2f2; border: 1px solid #fca5a5; border-radius: 8px; padding: 0.85rem; text-align: center; color: #991b1b;">
+              <h3 style="font-size: 1.2rem; font-weight: 900;">VOTO NULO</h3>
+              <p style="font-size: 0.8rem;">Número não correspondente a nenhum candidato.</p>
+            </div>
+          </div>
+        `;
+      }
+    }
+
+    function handleSaveCandidate(e) {
+      e.preventDefault();
+      const num = document.getElementById('cand-num').value;
+      const party = document.getElementById('cand-party').value;
+      const name = document.getElementById('cand-name').value;
+      const photo = document.getElementById('cand-photo-base64').value;
+      const vice = document.getElementById('cand-vice').value;
+      const vicePhoto = document.getElementById('cand-vice-photo-base64').value;
+      const desc = document.getElementById('cand-desc').value;
+
+      const newCand = { numero: String(num), partido: party, nome: name, photo, vice, vicePhoto, descricao: desc };
+      
+      const updatedCandidates = [...state.candidates];
+      const idx = updatedCandidates.findIndex(c => c.numero === String(num));
+      if (idx >= 0) updatedCandidates[idx] = newCand;
+      else updatedCandidates.push(newCand);
+
+      db.ref('candidates').set(updatedCandidates);
+      alert('Candidato gravado com sucesso no Firebase!');
+      e.target.reset();
+      document.getElementById('cand-photo-base64').value = '';
+      document.getElementById('cand-vice-photo-base64').value = '';
+    }
+
+    async function handleChangeUrnaPassword(e) {
+      e.preventDefault();
+      const newP = document.getElementById('urna-pwd-new').value;
+      const newHash = await hashString(newP);
+
+      if (newHash === state.adminPasswordHash) {
+        return alert('SEGURANÇA: A senha da Urna NÃO pode ser igual à senha do Administrador!');
+      }
+
+      db.ref('settings/urnaPasswordHash').set(newHash);
+      alert('Senha da Urna atualizada com sucesso!');
+      e.target.reset();
+    }
+
+    async function handleChangeAdminPassword(e) {
+      e.preventDefault();
+      const curr = document.getElementById('pwd-current').value;
+      const newP = document.getElementById('pwd-new').value;
+      const conf = document.getElementById('pwd-confirm').value;
+
+      const currHash = await hashString(curr);
+      if (currHash !== state.adminPasswordHash) return alert('Senha atual do Admin incorreta!');
+      if (newP !== conf) return alert('A nova senha e a confirmação não coincidem!');
+
+      const newAdminHash = await hashString(newP);
+      if (newAdminHash === state.urnaPasswordHash) {
+        return alert('SEGURANÇA: A senha do Administrador NÃO pode ser igual à senha da Urna!');
+      }
+
+      db.ref('settings/adminPasswordHash').set(newAdminHash);
+      alert('Senha do administrador alterada com sucesso!');
+      e.target.reset();
+    }
+
+    function openProfile(num) {
+      const cand = state.candidates.find(c => c.numero === num);
+      if (!cand) return;
+      const content = document.getElementById('profile-modal-content');
+      content.innerHTML = `
+        <div style="text-align: center;">
+          <h2 style="color: #38bdf8; margin-bottom: 0.5rem;">${cand.nome} (Nº ${cand.numero})</h2>
+          <p style="color: #94a3b8; font-weight: 700; margin-bottom: 1rem;">Partido: ${cand.partido}</p>
+          <div style="display: flex; justify-content: center; gap: 1rem; margin-bottom: 1rem;">
+            <div>
+              ${cand.photo ? `<img src="${cand.photo}" style="width: 80px; height: 80px; border-radius: 8px; object-fit: cover;">` : `<div style="width:80px;height:80px;background:#334155;border-radius:8px;display:grid;place-items:center;">👤</div>`}
+              <span style="font-size:0.75rem; color:#cbd5e1; display:block;">Candidato</span>
+            </div>
+            <div>
+              ${cand.vicePhoto ? `<img src="${cand.vicePhoto}" style="width: 80px; height: 80px; border-radius: 8px; object-fit: cover;">` : `<div style="width:80px;height:80px;background:#334155;border-radius:8px;display:grid;place-items:center;">👤</div>`}
+              <span style="font-size:0.75rem; color:#cbd5e1; display:block;">Vice: ${cand.vice}</span>
+            </div>
+          </div>
+          <p style="background: #0f172a; padding: 1rem; border-radius: 8px; color: #f8fafc; font-size: 0.9rem; text-align: left;">${cand.descricao}</p>
+          <button class="btn-primary" style="margin-top: 1rem; width: 100%;" onclick="selectCandidateNumber('${cand.numero}'); closeProfileModal();">Selecionar para Votar</button>
+        </div>
+      `;
+      document.getElementById('modal-profile').style.display = 'grid';
+    }
+    function closeProfileModal() {
+      document.getElementById('modal-profile').style.display = 'none';
+    }
+
+    function renderVoterLogs() {
+      const tbody = document.getElementById('voter-log-tbody');
+      tbody.innerHTML = state.voterLogs.map(l => `
+        <tr><td>${l.name}</td><td>${l.durationSec}s</td></tr>
+      `).join('');
+    }
+
+    function renderPublicResults() {
+      const tbody = document.getElementById('public-tally-tbody');
+      const nullVotes = Object.keys(state.votes).reduce((acc, k) => !state.candidates.some(c => c.numero === k) && k !== 'BRANCO' ? acc + state.votes[k] : acc, 0);
+
+      let rowsHtml = state.candidates.map(c => `
+        <tr>
+          <td><b>${c.nome}</b> (Vice: ${c.vice})</td>
+          <td><span class="cand-num">Nº ${c.numero}</span></td>
+          <td>${c.partido}</td>
+          <td><b>${state.votes[c.numero] || 0}</b> voto(s)</td>
+        </tr>
+      `).join('');
+
+      rowsHtml += `
+        <tr><td>Votos em Branco</td><td>-</td><td>-</td><td><b>${state.votes['BRANCO'] || 0}</b> voto(s)</td></tr>
+        <tr><td>Votos Nulos</td><td>-</td><td>-</td><td><b>${nullVotes}</b> voto(s)</td></tr>
+      `;
+      tbody.innerHTML = rowsHtml;
+
+      const ctx = document.getElementById('publicResultsChart').getContext('2d');
+      const labels = [...state.candidates.map(c => `${c.nome} (${c.numero})`), 'Brancos', 'Nulos'];
+      const data = [...state.candidates.map(c => state.votes[c.numero] || 0), state.votes['BRANCO'] || 0, nullVotes];
+
+      if (chartInstancePublic) chartInstancePublic.destroy();
+      chartInstancePublic = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [{ label: 'Votos', data, backgroundColor: ['#2563eb', '#16a34a', '#9333ea', '#eab308', '#ef4444'] }]
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { display: false } },
+          scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+        }
+      });
+    }
+
+    function renderAdminResults() {
+      const tbody = document.getElementById('admin-tally-tbody');
+      const nullVotes = Object.keys(state.votes).reduce((acc, k) => !state.candidates.some(c => c.numero === k) && k !== 'BRANCO' ? acc + state.votes[k] : acc, 0);
+
+      let rowsHtml = state.candidates.map(c => `
+        <tr>
+          <td><b>${c.nome}</b> (${c.numero})</td>
+          <td><b>${state.votes[c.numero] || 0}</b></td>
+        </tr>
+      `).join('');
+
+      rowsHtml += `
+        <tr><td>Brancos</td><td><b>${state.votes['BRANCO'] || 0}</b></td></tr>
+        <tr><td>Nulos</td><td><b>${nullVotes}</b></td></tr>
+      `;
+      tbody.innerHTML = rowsHtml;
+
+      const ctx = document.getElementById('adminResultsChart').getContext('2d');
+      const labels = [...state.candidates.map(c => `${c.nome} (${c.numero})`), 'Brancos', 'Nulos'];
+      const data = [...state.candidates.map(c => state.votes[c.numero] || 0), state.votes['BRANCO'] || 0, nullVotes];
+
+      if (chartInstanceAdmin) chartInstanceAdmin.destroy();
+      chartInstanceAdmin = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [{ label: 'Votos', data, backgroundColor: ['#2563eb', '#16a34a', '#9333ea', '#eab308', '#ef4444'] }]
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { display: false } },
+          scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+        }
+      });
+    }
+
+    function updateElectionTimer() {
+      const mins = parseInt(document.getElementById('input-timer-min').value) || 60;
+      const totalSec = mins * 60;
+      db.ref('settings/electionSecondsLeft').set(totalSec);
+    }
+
+    setInterval(() => {
+      if (state.electionSecondsLeft > 0 && !state.electionEnded) {
+        state.electionSecondsLeft--;
+        const m = String(Math.floor(state.electionSecondsLeft / 60)).padStart(2, '0');
+        const s = String(Math.floor(state.electionSecondsLeft % 60)).padStart(2, '0');
+        document.getElementById('election-timer-display').textContent = `${m}:${s}`;
+      }
+    }, 1000);
+  </script>
+</body>
+</html>
